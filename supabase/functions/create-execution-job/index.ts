@@ -60,6 +60,8 @@ Deno.serve(async (req: Request) => {
   if (itemsError) return response({ error: { code: "DATABASE_ERROR", message: "Could not validate inventory" } }, 500, cors);
   if (!items || items.length !== parsed.data.inventory_ids.length) return response({ error: { code: "INVENTORY_SCOPE", message: "One or more inventory records do not belong to your organization" } }, 403, cors);
 
+  if (items.some((item) => item.status === "archived")) return response({ error: { code: "INVENTORY_ARCHIVED", message: "Archived inventory cannot be queued" } }, 422, cors);
+
   const suppliedIdempotencyKey = req.headers.get("idempotency-key");
   if (suppliedIdempotencyKey !== null && (suppliedIdempotencyKey.length < 8 || suppliedIdempotencyKey.length > 200)) {
     return response({ error: { code: "INVALID_IDEMPOTENCY_KEY", message: "Idempotency key must be between 8 and 200 characters" } }, 400, cors);
@@ -78,6 +80,12 @@ Deno.serve(async (req: Request) => {
     idempotency_key: idempotencyKey,
     message: "Job accepted. Adapter eligibility is being evaluated; no marketplace publication has been confirmed."
   }).select("*").single();
+  if (jobError?.code === "23505") {
+    // Concurrent duplicate request with the same idempotency key: return the job that won the race.
+    const { data: winner } = await admin.from("execution_jobs").select("*")
+      .eq("organization_id", orgId).eq("idempotency_key", idempotencyKey).maybeSingle();
+    if (winner) return response(winner, 200, cors);
+  }
   if (jobError || !job) return response({ error: { code: "JOB_CREATE_FAILED", message: "Could not create execution job" } }, 500, cors);
 
   const jobItems = items.flatMap((item) => parsed.data.platforms.map((platform) => ({

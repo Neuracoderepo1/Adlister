@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { supabase } from "./lib/supabase";
 import { createExecutionJob, createInventory, listExecutionJobs, listInventory, updateInventory } from "./lib/api";
+import { toCsv } from "./lib/csv";
 import type { Currency, ExecutionJob, InventoryItem, Region } from "./lib/types";
 
 const regions: { name: Region; currency: Currency; store: string }[] = [
@@ -145,14 +146,8 @@ function App() {
   }
   function exportCsv() {
     const rows = inventory.filter(i => selected.length ? selected.includes(i.id) : true);
-    const quote = (value: unknown) => {
-      let text = String(value ?? "");
-      if (/^[\s]*[=+\-@]/.test(text)) text = "'" + text;
-      return `"${text.replaceAll('"', '""')}"`;
-    };
-    const csv = [["id","title","sku","base_price","currency","age_days","status","platforms"],
-      ...rows.map(i => [i.id,i.title,i.sku ?? "",i.base_price,i.currency,i.age_days,i.status,i.platforms.join(";")])]
-      .map(row => row.map(quote).join(",")).join("\r\n");
+    const csv = toCsv([["id","title","sku","base_price","currency","age_days","status","platforms"],
+      ...rows.map(i => [i.id,i.title,i.sku ?? "",i.base_price,i.currency,i.age_days,i.status,i.platforms.join(";")])]);
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a"); a.href = url; a.download = "adlister-inventory.csv"; a.click(); URL.revokeObjectURL(url);
     log(`Exported ${rows.length} inventory records to CSV.`);
